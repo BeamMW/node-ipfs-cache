@@ -1,4 +1,4 @@
-const parser  = require('url');
+const parser = require('url')
 
 class Router {
     constructor() {

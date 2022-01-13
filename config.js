@@ -20,6 +20,7 @@ class Config {
         Object.assign(this, parsed)
 
         this.DBFile = path.resolve(this.DBFolder)
+        // TODO: add periodical GC
     }
 }
 

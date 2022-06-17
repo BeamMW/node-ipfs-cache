@@ -1,4 +1,4 @@
 # Specify filepatterns you want git to ignore.
 .idea
 node_modules
-data.db
+data-db

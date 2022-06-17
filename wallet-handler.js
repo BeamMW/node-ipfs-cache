@@ -4,66 +4,41 @@ const status    = require("./status")
 const fs        = require("fs");
 const utils     = require("./utils")
 const store     = require("./store")
+const {TextDecoder} = require("util")
 
 // TODO: restrict file size
 // TODO: check if we really need to fail in all cases
-function fatal (err) {
-    console.error(`Fatal Wallet API error:\n\t${JSON.stringify(err)}`)
-    process.exit(1)
-}
-
 class WalletHandler {
-    constructor() {
-        this.shader = [...fs.readFileSync(config.ShaderFile)]
-        this.restartPending = config.RestartPending
-    }
-
-    async connect() {
-        this.api = new WalletApi(config.WalletAPI.Address, config.WalletAPI.ReconnectInterval)
-        this.api.on('connect', () => this.__on_connect())
-        this.api.on('result', (...args) => this.__on_api_result(...args))
-        await this.api.connect()
+    constructor(api) {
+      this.restartPending = config.RestartPending
+      this.api = api
+      this.api.on('connect', () => this.__on_connect())
+      this.api.on('result', (...args) => this.__on_api_result(...args))
     }
 
     __on_api_result(err, res, full) {
         if (err) {
-            return fatal(err)
+            return utils.fatal(err)
         }
 
         if (full.id === "ev_system_state") {
             return this.__on_system_state(res)
         }
 
-        fatal(`Unexpected Wallet API result call ${full}`)
+      utils.fatal(`Unexpected Wallet API result call ${full}`)
     }
 
     __on_connect () {
-        this.api.contract (
-            "role=manager,action=view",
-            (...args) => this.__on_check_cid(...args),
-            this.shader
-        )
-    }
-
-    __on_check_cid (err, res) {
+      // We're ok to start watching
+      this.api.call("ev_subunsub", {ev_system_state: true}, (err, res) => {
         if (err) {
-            return fatal(err)
+          return utils.fatal(err)
         }
 
-        if (!res.contracts.some(el => el.cid === config.CID)) {
-            return fatal(`CID not found '${config.CID}'`)
+        if (!res) {
+          utils.fatal("failed to subscibe to status update event")
         }
-
-        // We're ok to start watching
-        this.api.call("ev_subunsub", {ev_system_state: true}, (err, res) => {
-            if (err) {
-                return fatal(err)
-            }
-
-            if (!res) {
-                fatal("failed to subscibe to status update event")
-            }
-        })
+      })
     }
 
     async __on_system_state(state) {
@@ -198,4 +173,4 @@ class WalletHandler {
     }
 }
 
-module.exports = new WalletHandler()
+module.exports = WalletHandler

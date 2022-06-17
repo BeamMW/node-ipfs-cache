@@ -1,0 +1,17 @@
+const ObjectHandler = require('./object-handler')
+
+class CollectionsHandler extends ObjectHandler {
+  constructor(api) {
+    super({objname: 'collection', api})
+  }
+
+  async __process_item(item, data) {
+    let cover = data.cover
+    if (cover) {
+      if (!cover.ipfs_hash) throw new Error('no ipfs hash on cover')
+      await this.__pin_object(item.id, 'cover', cover.ipfs_hash)
+    }
+  }
+}
+
+module.exports = CollectionsHandler

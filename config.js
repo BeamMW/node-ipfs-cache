@@ -6,10 +6,12 @@ class Config {
         this.Debug      = true
         this.Port       = 14500
         this.Secret     = "secret"
-        this.CID        = '6736a6f47af610283ac8c4e73ae1d0e6a3c6bdbe456d949bc555dfea7fb20262'
+        this.CID        = '74f3435d5e659bbf4510433d4997d9c05b73b69b305d29a3b0c43babb795ee05'
         this.ShaderFile = 'galleryManager.wasm'
-        this.DBFolder   = 'data-db'
+        this.DBFolder   = `data-db-${this.CID}`
         this.RestartPending = true
+        this.Cache      = true
+        this.Serve      = true
         this.WalletAPI  = {
             Address: "127.0.0.1:14666",
             ReconnectInterval: 5000

@@ -164,7 +164,6 @@ class WalletHandler {
                 console.log(`Failed to pin artwork ${id}/${ipfs_hash}, ${JSON.stringify(err)}`)
                 return
             }
-
             store.removePendingArtwork(id)
             if (config.Debug) {
                 console.log(`Artwork ${id}/${ipfs_hash} successfully pinned`)

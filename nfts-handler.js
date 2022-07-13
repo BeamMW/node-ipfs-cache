@@ -10,7 +10,11 @@ class NFTSHandler extends ObjectHandler {
     let image = data.image
     if (!image) throw new Error('empty image')
     if (!image.ipfs_hash) throw new Error('no ipfs hash on image')
-    await this.__pin_object(item.id, 'image', image.ipfs_hash)
+    if (config.Cache) this.__pin_object(item.id, 'image', image.ipfs_hash)
+  }
+
+  queryId2Id(id) {
+    return parseInt(id)
   }
 }
 

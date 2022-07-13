@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "level": "^7.0.1"
+    "level": "^7.0.1",
+    "lexicographic-integer": "^1.1.0"
   }
 }

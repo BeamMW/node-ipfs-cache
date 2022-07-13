@@ -1,6 +1,7 @@
 const level  = require('level')
 const config = require('./config')
 const status = require('./status')
+const lexint = require('lexicographic-integer')
 
 const FAILED_HASH_PREFIX = "failed-hash-"
 const PENDING_HASH_PREFIX = "pending-hash-"
@@ -65,7 +66,7 @@ class Store {
       await this.db.del(failedkey)
 
       let completedkey = [COMPLETED_OBJS_PREFIX, objname, 's'].join('')
-      let value = this.db.get(completedkey)
+      let value = await this.db.get(completedkey)
       await this.db.put(completedkey, value + 1)
       status[completedkey]++
     }
@@ -95,19 +96,23 @@ class Store {
     async registerCompletedHash(objname, id, subname, ipfs_hash) {
       let failedkey = [FAILED_HASH_PREFIX, objname, id, subname].join('')
       this.db.get(failedkey, (err) => {
-        if (!err) status[FAILED_HASHES]--
+        if (!err) {
+          status[FAILED_HASHES]--
+          this.db.del(failedkey)
+        }
       })
-      await this.db.del(failedkey)
 
       let pendingkey = [PENDING_HASH_PREFIX, objname, id, subname].join('')
       this.db.get(pendingkey, (err) => {
-        if (!err) status[PENDING_HASHES]--
+        if (!err) {
+          status[PENDING_HASHES]--
+          this.db.del(pendingkey)
+        }
       })
-      await this.db.del(pendingkey)
 
-      let val = await this.db.get(COMPLETED_HASHES)
-      await this.db.put(COMPLETED_HASHES, val + 1)
-      status[COMPLETED_HASHES]++
+      let completed = status[COMPLETED_HASHES] + 1
+      status[COMPLETED_HASHES] = completed
+      await this.db.put(COMPLETED_HASHES, completed)
     }
 
     getPendingHashes (objname) {
@@ -134,6 +139,78 @@ class Store {
       await this.db.put(key, value)
       status[key] = value
     }
+
+  //
+  // Refactored
+  //
+  id2dbid(id) {
+    if (typeof id === 'number') {
+      return lexint.pack(id, 'hex')
+    }
+    return id
+  }
+
+  async setObject(type, object) {
+    let id = this.id2dbid(object.id)
+    let updated = this.id2dbid(object.updated)
+    let hkey = ['object', type, 'height', updated].join('-')
+    let ikey = ['object', type, 'id', id].join('-')
+    await this.db.put(hkey, object)
+    await this.db.put(ikey, object)
+  }
+
+  async getObjectById(type, id) {
+    id = this.id2dbid(id)
+    let ikey = ['object', type, 'id', id].join('-')
+    return await this.db.get(ikey)
+  }
+
+  async getObjectsById0(type, id0, count) {
+    id0 = this.id2dbid(id0)
+    let ikey = ['object', type, 'id', id0].join('-')
+    let ekey = ['object', type, 'id'].join('-') + '~'
+    let iter = this.db.iterator({
+      gte: ikey,
+      lte: ekey,
+      limit: count
+    })
+
+    let res = []
+    for await (const [key, val] of iter) {
+      res.push(val)
+    }
+
+    return res
+  }
+
+  async getObjectsByH0(type, h0, count) {
+    h0 = this.id2dbid(h0)
+    let ikey = ['object', type, 'height', h0].join('-')
+    let ekey = ['object', type, 'height'].join('-') + '~'
+    let iter = this.db.iterator({
+      gte: ikey,
+      lte: ekey,
+      limit: count
+    })
+
+    let res = []
+    let processed = 0
+    let hprocessed = 0
+    for await (const [key, val] of iter) {
+      if (processed++ < count) {
+        res.push(val)
+        hprocessed = val.updated
+      }
+      else {
+        if (val.updated > hprocessed) {
+          break
+        }
+        res.push(val)
+      }
+    }
+
+    return res
+  }
 }
 
 module.exports = new Store()

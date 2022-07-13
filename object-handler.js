@@ -24,7 +24,7 @@ class ObjectHandler {
 
       for await (const [key, val] of store.getPendingHashes(this.objname)) {
         console.log(`Pending ${this.objname}/${val.id}/${val.subname}/${val.ipfs_hash}`)
-        await this.__pin_object(val.id, val.subname, val.ipfs_hash)
+        this.__pin_object(val.id, val.subname, val.ipfs_hash)
       }
 
       // do not reload failed hashes, they are already in pending
@@ -39,10 +39,13 @@ class ObjectHandler {
   }
 
   async __loadInternal(depth) {
-    const perBatch = 1 //config.Debug ? 1 : 50
+    const perBatch = 10
     let hprocessed = await store.getProcessedBlock(this.objname)
     let hnext = hprocessed + 1
-    console.log(`_loadAsyncInternal for ${this.objname}s with depth ${depth}, hnext ${hnext}`)
+    console.log(`__loadInternal for ${this.objname}s with depth ${depth}, hnext ${hnext}`)
+
+    let tlabel = `__loadInternal-${this.objname}-${hnext}`
+    console.time(tlabel)
 
     let {res} = await this.api.contractAsync({
       role: 'manager',
@@ -53,6 +56,9 @@ class ObjectHandler {
     })
 
     utils.ensureField(res, 'items', 'array')
+    console.log(`__loadInternal for ${this.objname}s completed: ${res.items.length} items`)
+    console.timeEnd(tlabel)
+
     for(let item of res.items) {
       try {
         if (!item.data) {
@@ -64,6 +70,7 @@ class ObjectHandler {
           throw new Error(`incorrect object version ${data.version}`)
         }
 
+        console.log(`New ${this.objname} found: ${item.label}, ${item.id}`)
         await this.__process_item(item, data)
         await store.registerCompletedObject(this.objname, item.id)
       }
@@ -71,12 +78,11 @@ class ObjectHandler {
         console.log(`Failed to load ${this.objname}/${item.id}: ${err.stack}`)
         await store.registerFailedObject(this.objname, item.id, err)
       }
-
       hprocessed = Math.max(hprocessed, item.updated)
+      await store.setObject(this.objname, item)
     }
 
     await store.setProcessedBlock(this.objname, hprocessed)
-
     if (res.items.length > 0) {
       process.nextTick(() => this.__loadInternal(++depth))
       return
@@ -101,6 +107,52 @@ class ObjectHandler {
       }
       console.log(`${fullid} successfully pinned`)
       store.registerCompletedHash(this.objname, id, subname)
+    })
+  }
+
+  queryId2Id(id) {
+    return id
+  }
+
+  regRoutes(router) {
+    let name = `/view_${this.objname}s`
+    router.register(name, async (req, res, url) => {
+      let id0 = url.query['id0']
+      let h0 = url.query['h0']
+      let count = parseInt(url.query['count'] || '20')
+      if (count > 20) {
+        res.writeHead(200)
+        res.end(`count cannot be > 50, ${count} provided`)
+        return
+      }
+
+      if (id0 && count) {
+        id0 = this.queryId2Id(id0)
+        let objects = await store.getObjectsById0(this.objname, id0, count + 1)
+        let nextid = this.getZeroId()
+
+        if (objects.length > count) {
+          let last = objects.pop()
+          nextid = last.id
+        }
+
+        let result = {'items': objects, nextid}
+        res.writeHead(200)
+        res.end(JSON.stringify(objects))
+        return
+      }
+
+      if (h0 && count) {
+        h0 = this.queryId2Id(h0)
+        let objects = await store.getObjectsByH0(this.objname, h0, count)
+        let result = {'items': objects}
+        res.writeHead(200)
+        res.end(JSON.stringify(objects))
+        return
+      }
+
+      res.writeHead(200)
+      res.end('NOT IMPLEMENTED')
     })
   }
 }

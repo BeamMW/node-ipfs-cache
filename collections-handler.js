@@ -1,4 +1,5 @@
 const ObjectHandler = require('./object-handler')
+const config = require('./config')
 
 class CollectionsHandler extends ObjectHandler {
   constructor(api) {
@@ -9,8 +10,12 @@ class CollectionsHandler extends ObjectHandler {
     let cover = data.cover
     if (cover) {
       if (!cover.ipfs_hash) throw new Error('no ipfs hash on cover')
-      await this.__pin_object(item.id, 'cover', cover.ipfs_hash)
+      if (config.Cache) this.__pin_object(item.id, 'cover', cover.ipfs_hash)
     }
+  }
+
+  queryId2Id(id) {
+    return parseInt(id)
   }
 }
 

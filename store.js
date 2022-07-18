@@ -144,31 +144,89 @@ class Store {
   // Refactored
   //
   id2dbid(id) {
-    if (typeof id === 'number') {
+    console.log(`id2dbid ${id}, ${typeof(id)}`)
+    if (typeof(id) === 'number') {
       return lexint.pack(id, 'hex')
     }
     return id
   }
 
-  async setObject(type, object) {
-    let id = this.id2dbid(object.id)
-    let updated = this.id2dbid(object.updated)
-    let hkey = ['object', type, 'height', updated].join('-')
-    let ikey = ['object', type, 'id', id].join('-')
-    await this.db.put(hkey, object)
-    await this.db.put(ikey, object)
+  getIdKey(type, id) {
+    if (id !== undefined) {
+      id = this.id2dbid(id)
+      return ['object', type, 'id', id].join('-')
+    }
+    return ['object', type, 'id'].join('-') + '-~'
+  }
+
+  getHKey(type, h0, id) {
+    if (h0 !== undefined && id !== undefined) {
+      h0 = this.id2dbid(h0)
+      id = this.id2dbid(id)
+      return ['object', type, 'height', h0, id].join('-')
+    }
+
+    if (h0 !== undefined) {
+      h0 = this.id2dbid(h0)
+      return ['object', type, 'height', h0].join('-') + '-!'
+    }
+
+    return ['object', type, 'height'].join('-') + '-~'
   }
 
   async getObjectById(type, id) {
-    id = this.id2dbid(id)
-    let ikey = ['object', type, 'id', id].join('-')
-    return await this.db.get(ikey)
+    let ikey = this.getIdKey(type, id)
+
+    try {
+      return await this.db.get(ikey)
+    }
+    catch(err) {
+      if (err.name !== 'NotFoundError') {
+        throw err
+      }
+      return undefined
+    }
+  }
+
+  async setObject(type, object) {
+    let old = await this.getObjectById(type, object.id)
+    if (old && old.updated > object.updated) {
+        console.log(`!!! Updated skipped ${type}, id ${object.id}, hold ${old.updated}, hnew ${object.updated}`)
+        return
+    }
+
+    let batch = []
+    if (old) {
+      let ohkey = this.getHKey(type, old.updated, old.id)
+      console.log(`DEL ${old.id}`)
+      batch.push({
+        type: 'del',
+        key: ohkey,
+      })
+    }
+
+    let ikey = this.getIdKey(type, object.id)
+    console.log(`PUT ${object.id}, ikey ${ikey}`)
+    batch.push({
+      type: 'put',
+      key: ikey,
+      value: object
+    })
+
+    let hkey = this.getHKey(type, object.updated, object.id)
+    console.log(`PUT ${object.id}, hkey ${hkey}`)
+    batch.push({
+      type: 'put',
+      key: hkey,
+      value: object
+    })
+
+    await this.db.batch(batch)
   }
 
   async getObjectsById0(type, id0, count) {
-    id0 = this.id2dbid(id0)
-    let ikey = ['object', type, 'id', id0].join('-')
-    let ekey = ['object', type, 'id'].join('-') + '~'
+    let ikey = this.getIdKey(type, id0)
+    let ekey = this.getIdKey(type)
     let iter = this.db.iterator({
       gte: ikey,
       lte: ekey,
@@ -184,11 +242,10 @@ class Store {
   }
 
   async getObjectsByH0(type, h0, count) {
-    h0 = this.id2dbid(h0)
-    let ikey = ['object', type, 'height', h0].join('-')
-    let ekey = ['object', type, 'height'].join('-') + '~'
+    let skey = this.getHKey(type, h0)
+    let ekey = this.getHKey(type)
     let iter = this.db.iterator({
-      gte: ikey,
+      gte: skey,
       lte: ekey,
       limit: count
     })
@@ -196,7 +253,9 @@ class Store {
     let res = []
     let processed = 0
     let hprocessed = 0
+    console.log(`GET H0 ${h0} - ${skey}`)
     for await (const [key, val] of iter) {
+      console.log(`--- ${key} - ${val.id} - ${val.label}`)
       if (processed++ < count) {
         res.push(val)
         hprocessed = val.updated

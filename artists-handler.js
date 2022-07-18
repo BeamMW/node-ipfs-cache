@@ -19,6 +19,14 @@ class ArtistsHandler extends ObjectHandler {
       if (config.Cache) this.__pin_object(item.id, 'banner', banner.ipfs_hash)
     }
   }
+
+  getZeroId() {
+    return '000000000000000000000000000000000000000000000000000000000000000000'
+  }
+
+  queryId2Id(id) {
+    return id
+  }
 }
 
 module.exports = ArtistsHandler

@@ -70,7 +70,7 @@ class ObjectHandler {
           throw new Error(`incorrect object version ${data.version}`)
         }
 
-        console.log(`New ${this.objname} found: ${item.label}, ${item.id}`)
+        console.log(`Updated ${this.objname} found: id ${item.id}, '${item.label}'`)
         await this.__process_item(item, data)
         await store.registerCompletedObject(this.objname, item.id)
       }
@@ -111,16 +111,29 @@ class ObjectHandler {
   }
 
   queryId2Id(id) {
-    return id
+    let parsed = parseInt(id)
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
+
+  queryH02Id (h0) {
+    let parsed = parseInt(h0)
+    return Number.isNaN(parsed) ? undefined : parsed
+  }
+
+  getZeroId() {
+    return 0
   }
 
   regRoutes(router) {
     let name = `/view_${this.objname}s`
     router.register(name, async (req, res, url) => {
+      res.setHeader('Access-Control-Allow-Origin', config.AllowOrigin)
+      res.setHeader('Access-Control-Allow-Methods', 'GET')
+
       let id0 = url.query['id0']
       let h0 = url.query['h0']
       let count = parseInt(url.query['count'] || '20')
-      if (count > 20) {
+      if (count > 50) {
         res.writeHead(200)
         res.end(`count cannot be > 50, ${count} provided`)
         return
@@ -128,6 +141,11 @@ class ObjectHandler {
 
       if (id0 && count) {
         id0 = this.queryId2Id(id0)
+        if (id0 === undefined) {
+          res.writeHead(200)
+          return res.end(`Invalid id0 ${url.query['id0']}/${id0}`)
+        }
+
         let objects = await store.getObjectsById0(this.objname, id0, count + 1)
         let nextid = this.getZeroId()
 
@@ -136,18 +154,25 @@ class ObjectHandler {
           nextid = last.id
         }
 
-        let result = {'items': objects, nextid}
+        let result = {'items': objects, 'next_id': nextid}
+        res.setHeader('Content-Type', 'application/json')
         res.writeHead(200)
-        res.end(JSON.stringify(objects))
+        res.end(JSON.stringify(result))
         return
       }
 
-      if (h0 && count) {
-        h0 = this.queryId2Id(h0)
+      if (h0  && count) {
+        h0 = this.queryH02Id(h0)
+        if (h0 === undefined) {
+          res.writeHead(200)
+          return res.end(`Invalid h0 ${url.query['h0']}/${h0}`)
+        }
+
         let objects = await store.getObjectsByH0(this.objname, h0, count)
         let result = {'items': objects}
+        res.setHeader('Content-Type', 'application/json')
         res.writeHead(200)
-        res.end(JSON.stringify(objects))
+        res.end(JSON.stringify(result))
         return
       }
 

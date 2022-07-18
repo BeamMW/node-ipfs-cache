@@ -12,10 +12,6 @@ class NFTSHandler extends ObjectHandler {
     if (!image.ipfs_hash) throw new Error('no ipfs hash on image')
     if (config.Cache) this.__pin_object(item.id, 'image', image.ipfs_hash)
   }
-
-  queryId2Id(id) {
-    return parseInt(id)
-  }
 }
 
 module.exports = NFTSHandler

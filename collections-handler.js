@@ -13,10 +13,6 @@ class CollectionsHandler extends ObjectHandler {
       if (config.Cache) this.__pin_object(item.id, 'cover', cover.ipfs_hash)
     }
   }
-
-  queryId2Id(id) {
-    return parseInt(id)
-  }
 }
 
 module.exports = CollectionsHandler

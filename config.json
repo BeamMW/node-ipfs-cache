@@ -1,3 +1,10 @@
 {
-  "Debug": true
+  "Debug": true,
+  "CID": "4390f75c95f60e6c069fb25a4c210d9b3b8a79804b1e5ddba431965ea8eb4cd9",
+  "Cache": true,
+  "Serve": true,
+  "WalletAPI": {
+    "Address": "127.0.0.1:10000",
+    "ReconnectInterval": 3000
+  }
 }

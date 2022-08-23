@@ -9,9 +9,6 @@ class Status {
     this.store = store
   }
 
-  //
-  // Objects
-  //
   async report (req, res, url) {
     const q = url.parse(req.url,true).query
     if (url.query['secret'] !== config.Secret) {
@@ -20,36 +17,16 @@ class Status {
       return
     }
 
+    //
+    // Stats = values stored on this object + some info from store
+    //
+
+    // This object data
     let info = Object.assign({}, this)
     delete info.store
 
-    info.FailedObjects = {}
-    info.FailedHashes = {}
-
-    let objnames = ['nft', 'collection', 'artist']
-    for (let objname of objnames) {
-      info.FailedObjects[`${objname}s`] = {}
-      info.FailedHashes[`${objname}s`] = {}
-
-      {
-        let count = 0
-        for await (const [key, val] of this.store.getFailedObjects(objname)) {
-          info.FailedObjects[`${objname}s`][val.id] = val.reason
-          count++
-        }
-        info.FailedObjects[`${objname}s-count`] = count
-      }
-
-      {
-        let count = 0
-        for await (const [key, val] of this.store.getFailedHashes(objname)) {
-          info.FailedHashes[`${objname}s`][val.id] = {}
-          info.FailedHashes[`${objname}s`][val.id][val.subname] = {ipfs_hash: val.ipfs_hash, reason: val.reason}
-          count++
-        }
-        info.FailedHashes[`${objname}s-count`] = count
-      }
-    }
+    // Info from store
+    await this.store.fillStats(info)
 
     res.writeHead(200, {'Content-Type': 'application/json'})
     return res.end(JSON.stringify(info))

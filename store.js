@@ -5,12 +5,11 @@ const lexint = require('lexicographic-integer')
 
 const FAILED_HASH_PREFIX = "failed-hash-"
 const PENDING_HASH_PREFIX = "pending-hash-"
+const COMPLETED_HASH_PREFIX = "completed-hash-"
 const FAILED_OBJ_PREFIX = "failed-obj-"
-const COMPLETED_OBJS_PREFIX = "completed-objs-"
+const COMPLETED_OBJ_PREFIX = "completed-obj-"
+const COMPLETED_TOTAL_PREFIX = "completed-total-"
 const PROCESSED_BLOCK_PREFIX = "processed-block-"
-const COMPLETED_HASHES = "completed-hashes"
-const FAILED_HASHES = "failed-hashes"
-const PENDING_HASHES = "pending-hashes"
 
 class Store {
     async init() {
@@ -21,15 +20,38 @@ class Store {
         throw new Error('Persistent storage is required')
       }
 
-      await this.__ensure(COMPLETED_HASHES,  0)
-      await this.__ensure(FAILED_HASHES,  0)
-      await this.__ensure(PENDING_HASHES,  0)
       await this.__ensure_prefix(PROCESSED_BLOCK_PREFIX, 'artists', 0)
       await this.__ensure_prefix(PROCESSED_BLOCK_PREFIX, 'collections', 0)
       await this.__ensure_prefix(PROCESSED_BLOCK_PREFIX, 'nfts', 0)
-      await this.__ensure_prefix(COMPLETED_OBJS_PREFIX, 'artists', 0)
-      await this.__ensure_prefix(COMPLETED_OBJS_PREFIX, 'collections', 0)
-      await this.__ensure_prefix(COMPLETED_OBJS_PREFIX, 'nfts', 0)
+      await this.__ensure_prefix(COMPLETED_TOTAL_PREFIX, 'artists', 0)
+      await this.__ensure_prefix(COMPLETED_TOTAL_PREFIX, 'collections', 0)
+      await this.__ensure_prefix(COMPLETED_TOTAL_PREFIX, 'nfts', 0)
+    }
+
+    async __dbInc(key, inc) {
+      let val = 0
+      try {
+        val = await this.db.get(key)
+      }
+      catch(err) {
+        if (!err.notFound) {
+          throw err
+        }
+      }
+      await this.db.put(key, val + inc)
+    }
+
+    async __hasKey(key) {
+      try {
+        await this.db.get(key)
+        return true
+      }
+      catch(err) {
+        if (!err.notFound) {
+          throw err
+        }
+      }
+      return false
     }
 
     async __ensure(key, defval) {
@@ -47,7 +69,6 @@ class Store {
 
       await this.db.put(key, defval)
       console.log(`\t${key} initialized to ${defval}`)
-      status[key] = defval
       return defval
     }
 
@@ -57,18 +78,31 @@ class Store {
     }
 
     async registerFailedObject(objname, id, reason) {
-      let key = [FAILED_OBJ_PREFIX, objname, id].join('')
-      await this.db.put(key, {objname, id, reason: reason.toString()})
+      let failedkey = [FAILED_OBJ_PREFIX, objname, id].join('')
+      await this.db.put(failedkey, {objname, id, reason: reason.toString()})
+
+      let completedkey = [COMPLETED_OBJ_PREFIX, objname, id].join('')
+      let wascompleted = await this.__hasKey(completedkey)
+
+      await this.db.del(completedkey)
+      if (wascompleted) {
+        let completedtotal = [COMPLETED_TOTAL_PREFIX, `${objname}s`].join('')
+        await this.__dbInc(completedtotal, -1)
+      }
     }
 
     async registerCompletedObject(objname, id) {
       let failedkey = [FAILED_OBJ_PREFIX, objname, id].join('')
       await this.db.del(failedkey)
 
-      let completedkey = [COMPLETED_OBJS_PREFIX, objname, 's'].join('')
-      let value = await this.db.get(completedkey)
-      await this.db.put(completedkey, value + 1)
-      status[completedkey]++
+      let completedkey = [COMPLETED_OBJ_PREFIX, objname, id].join('')
+      let wascompleted = await this.__hasKey(completedkey)
+
+      await this.db.put(completedkey, {objname, id})
+      if (!wascompleted) {
+        let completedtotal = [COMPLETED_TOTAL_PREFIX, `${objname}s`].join('')
+        await this.__dbInc(completedtotal, 1)
+      }
     }
 
     getFailedObjects(objname) {
@@ -78,41 +112,43 @@ class Store {
       })
     }
 
+    getCompletedObjects(objname, keys) {
+      return this.db.iterator({
+        gte: `${COMPLETED_OBJ_PREFIX}${objname}`,
+        lte: `${COMPLETED_OBJ_PREFIX}${objname}~`
+      })
+    }
+
     //
     // Hashes
     //
     async registerPendingHash (objname, id, subname, ipfs_hash) {
       let key = [PENDING_HASH_PREFIX, objname, id, subname].join('')
       await this.db.put(key, {objname, subname, id, ipfs_hash})
-      status[PENDING_HASHES]++
     }
 
     async registerFailedHash (objname, id, subname, ipfs_hash, reason) {
       let key = [FAILED_HASH_PREFIX, objname, id, subname].join('')
       await this.db.put(key, {objname, subname, id, ipfs_hash, reason: reason.toString()})
-      status[FAILED_HASHES]++
     }
 
     async registerCompletedHash(objname, id, subname, ipfs_hash) {
       let failedkey = [FAILED_HASH_PREFIX, objname, id, subname].join('')
-      this.db.get(failedkey, (err) => {
+      this.db.get(failedkey, async (err) => {
         if (!err) {
-          status[FAILED_HASHES]--
-          this.db.del(failedkey)
+          await this.db.del(failedkey)
         }
       })
 
       let pendingkey = [PENDING_HASH_PREFIX, objname, id, subname].join('')
-      this.db.get(pendingkey, (err) => {
+      this.db.get(pendingkey, async (err) => {
         if (!err) {
-          status[PENDING_HASHES]--
-          this.db.del(pendingkey)
+          await this.db.del(pendingkey)
         }
       })
 
-      let completed = status[COMPLETED_HASHES] + 1
-      status[COMPLETED_HASHES] = completed
-      await this.db.put(COMPLETED_HASHES, completed)
+      let completedKey = [COMPLETED_HASH_PREFIX, objname, id, subname].join('')
+      await this.db.put(completedKey, {objname, subname, id, ipfs_hash})
     }
 
     getPendingHashes (objname) {
@@ -129,6 +165,13 @@ class Store {
       })
     }
 
+    getCompletedHashes (objname) {
+      return this.db.iterator({
+        gte: `${COMPLETED_HASH_PREFIX}${objname}`,
+        lte: `${COMPLETED_HASH_PREFIX}${objname}~`
+      })
+    }
+
     async getProcessedBlock(objname) {
       let key = [PROCESSED_BLOCK_PREFIX, `${objname}s`].join('')
       return await this.db.get(key)
@@ -137,7 +180,6 @@ class Store {
     async setProcessedBlock(objname, value) {
       let key = [PROCESSED_BLOCK_PREFIX, `${objname}s`].join('')
       await this.db.put(key, value)
-      status[key] = value
     }
 
   //
@@ -269,6 +311,67 @@ class Store {
     }
 
     return res
+  }
+
+  async fillStats(info) {
+    info[PROCESSED_BLOCK_PREFIX + 'artists'] = await this.getProcessedBlock('artist')
+    info[PROCESSED_BLOCK_PREFIX + 'collections'] = await this.getProcessedBlock('collection')
+    info[PROCESSED_BLOCK_PREFIX + 'nfts'] = await this.getProcessedBlock('nft')
+
+    info.CompletedObjects = {}
+    info.CompletedHashes = {}
+    info.FailedObjects = {}
+    info.FailedHashes = {}
+    info.PendingHashes = {}
+
+    let objnames = ['nft', 'collection', 'artist']
+    for (let objname of objnames) {
+      info.FailedObjects[`${objname}s`] = {}
+      info.FailedHashes[`${objname}s`] = {}
+      info.PendingHashes[`${objname}s`] = {}
+
+      {
+        let count = 0
+        for await (const [key, val] of this.getFailedObjects(objname)) {
+          info.FailedObjects[`${objname}s`][val.id] = val.reason
+          count++
+        }
+        info.FailedObjects[`${objname}s-count`] = count
+      }
+
+      {
+        let completedkey = [COMPLETED_TOTAL_PREFIX, `${objname}s`].join('')
+        info.CompletedObjects[`${objname}s`] = await this.db.get(completedkey)
+      }
+
+      {
+        let count = {}
+        for await (const [key, val] of this.getFailedHashes(objname)) {
+          info.FailedHashes[`${objname}s`][val.id] = {}
+          info.FailedHashes[`${objname}s`][val.id][val.subname] = {ipfs_hash: val.ipfs_hash, reason: val.reason}
+          count[val.subname] = (count[val.subname] || 0) + 1
+        }
+        info.FailedHashes[`${objname}s-count`] = count
+      }
+
+      {
+        let count = {}
+        for await (const [key, val] of this.getPendingHashes(objname)) {
+          info.PendingHashes[`${objname}s`][val.id] = {}
+          info.PendingHashes[`${objname}s`][val.id][val.subname] = {ipfs_hash: val.ipfs_hash, reason: val.reason}
+          count[val.subname] = (count[val.subname] || 0) + 1
+        }
+        info.PendingHashes[`${objname}s-count`] = count
+      }
+
+      {
+        let count = {}
+        for await (const [key, val] of this.getCompletedHashes(objname)) {
+          count[val.subname] = (count[val.subname] || 0) + 1
+        }
+        info.CompletedHashes[`${objname}s`] = count
+      }
+    }
   }
 }
 

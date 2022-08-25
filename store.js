@@ -288,8 +288,7 @@ class Store {
     let ekey = this.getHKey(type)
     let iter = this.db.iterator({
       gte: skey,
-      lte: ekey,
-      limit: count
+      lte: ekey
     })
 
     let res = []
@@ -309,7 +308,6 @@ class Store {
         res.push(val)
       }
     }
-
     return res
   }
 
